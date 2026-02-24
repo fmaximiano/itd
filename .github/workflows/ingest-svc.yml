@@ -23,5 +23,8 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Print exec_ref (teste)
+      - name: List BigQuery datasets
+        run: bq ls
+        
+      - name: Print exec_ref
         run: echo "Exec ref is $EXEC_REF"
