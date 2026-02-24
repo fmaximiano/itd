@@ -1,0 +1,19 @@
+name: Ingest Services
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '14 3 * * *'  
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set exec_ref
+        run: echo "EXEC_REF=$(date -u +'%Y%m%d_%H%M%S')" >> $GITHUB_ENV
+
+      - name: Print exec_ref (teste)
+        run: echo "Exec ref is $EXEC_REF"
