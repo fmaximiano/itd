@@ -25,6 +25,15 @@ jobs:
 
       - name: List BigQuery datasets
         run: bq ls
-        
+
+      - name: Test insert into stg_servicos
+        run: |
+          bq query --use_legacy_sql=false "
+          INSERT INTO \`digital-transformation-map.dataset_servicos.stg_servicos\`
+          (id_tecnico, dt_carga, exec_ref, origem, nid, nid_1, numero_etapa_src, numero_etapa_norm, is_numero_etapa_missing, chave_alvo)
+          VALUES
+          (GENERATE_UUID(), CURRENT_TIMESTAMP(), '${EXEC_REF}', 'teste', 'nid_teste', 'nid1_teste', NULL, NULL, TRUE, 'nid_teste-nid1_teste-')
+          "
+          
       - name: Print exec_ref
         run: echo "Exec ref is $EXEC_REF"
