@@ -15,5 +15,13 @@ jobs:
       - name: Set exec_ref
         run: echo "EXEC_REF=$(date -u +'%Y%m%d_%H%M%S')" >> $GITHUB_ENV
 
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.BIGQUERY_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Print exec_ref (teste)
         run: echo "Exec ref is $EXEC_REF"
