@@ -1,0 +1,1 @@
+#QUOTE: “I used to think that my life was a tragedy, but now I realize, it's a fucking comedy.” — Arthur Fleck (Joker)

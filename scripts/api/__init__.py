@@ -1,0 +1,1 @@
+#QUOTE: “Do not be so quick to deal out death and judgment. Even the very wise do not see all ends.” — Gandalf
