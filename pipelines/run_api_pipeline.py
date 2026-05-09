@@ -266,45 +266,30 @@ def restore_api_snapshot(
             backup_qtd_linhas,
         )
 
-        backup_id_carga_atual = str(uuid.uuid4())
-
         query = f"""
-            INSERT INTO `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot_backup`
-            SELECT
-              a.*,
-              @backup_id_carga_atual AS backup_id,
-              CURRENT_DATETIME("America/Sao_Paulo") AS backup_ts,
-              'backup_antes_de_restauracao' AS backup_motivo,
-              @execution_id AS substituido_por_execution_id,
-              @usuario_solicitante AS usuario_solicitante
-            FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot` a
-            WHERE FORMAT_DATE('%Y-%m', a.snapshot_date) = @mes_referencia;
+        DELETE FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot`
+        WHERE FORMAT_DATE('%Y-%m', snapshot_date) = @mes_referencia;
 
-            DELETE FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot`
-            WHERE FORMAT_DATE('%Y-%m', snapshot_date) = @mes_referencia;
+        INSERT INTO `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot`
+        SELECT
+        * EXCEPT(
+            backup_id,
+            backup_ts,
+            backup_motivo,
+            substituido_por_execution_id,
+            usuario_solicitante
+        )
+        FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot_backup`
+        WHERE backup_id = @backup_id_a_restaurar;
 
-            INSERT INTO `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot`
-            SELECT
-              * EXCEPT(
-                backup_id,
-                backup_ts,
-                backup_motivo,
-                substituido_por_execution_id,
-                usuario_solicitante
-              )
-            FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot_backup`
-            WHERE backup_id = @backup_id_a_restaurar;
+        DELETE FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot_backup`
+        WHERE backup_id = @backup_id_a_restaurar;
         """
 
         job = client.query(
             query,
             job_config=bigquery.QueryJobConfig(
                 query_parameters=[
-                    bigquery.ScalarQueryParameter(
-                        "backup_id_carga_atual",
-                        "STRING",
-                        backup_id_carga_atual,
-                    ),
                     bigquery.ScalarQueryParameter(
                         "backup_id_a_restaurar",
                         "STRING",
@@ -350,7 +335,7 @@ def restore_api_snapshot(
             snapshot_date=snapshot_date,
             status="sucesso",
             qtd_linhas=rows_restored,
-            backup_id=backup_id_carga_atual,
+            backup_id=None,
             backup_qtd_linhas=backup_qtd_linhas,
             restaurou_backup_id=backup_id_a_restaurar,
             usuario_solicitante=usuario_solicitante,
