@@ -166,6 +166,223 @@ def _replace_month_with_staging(
         mes_referencia=mes_referencia,
     )
 
+def _get_latest_backup_for_month(
+    client: bigquery.Client,
+    settings: Settings,
+    mes_referencia: str,
+) -> dict | None:
+    query = f"""
+        SELECT
+          backup_id,
+          MAX(backup_ts) AS backup_ts,
+          COUNT(*) AS qtd_linhas
+        FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot_backup`
+        WHERE FORMAT_DATE('%Y-%m', snapshot_date) = @mes_referencia
+          AND backup_id IS NOT NULL
+        GROUP BY backup_id
+        ORDER BY backup_ts DESC
+        LIMIT 1
+    """
+
+    job = client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter(
+                    "mes_referencia",
+                    "STRING",
+                    mes_referencia,
+                )
+            ]
+        ),
+    )
+
+    rows = list(job.result())
+
+    if not rows:
+        return None
+
+    row = rows[0]
+
+    return {
+        "backup_id": row["backup_id"],
+        "backup_ts": row["backup_ts"],
+        "qtd_linhas": row["qtd_linhas"],
+    }
+
+
+def restore_api_snapshot(
+    client: bigquery.Client,
+    settings: Settings,
+    execution_id: str,
+    mes_referencia: Optional[str] = None,
+    modo_execucao: str = "manual_github",
+    usuario_solicitante: Optional[str] = None,
+    github_run_id: Optional[str] = None,
+    ) -> int:
+    started_at = datetime.now()
+    controle_id = str(uuid.uuid4())
+
+    mes_referencia = mes_referencia or _mes_anterior_yyyy_mm()
+    snapshot_date = _snapshot_date_from_mes_referencia(mes_referencia)
+
+    logger.info("Iniciando restauração da API.")
+    logger.info("Mês de referência: %s", mes_referencia)
+
+    _insert_log(
+        client=client,
+        settings=settings,
+        controle_id=controle_id,
+        execution_id=execution_id,
+        acao="restaurar",
+        modo_execucao=modo_execucao,
+        mes_referencia=mes_referencia,
+        snapshot_date=snapshot_date,
+        status="iniciado",
+        usuario_solicitante=usuario_solicitante,
+        started_at=started_at,
+        github_run_id=github_run_id,
+        mensagem="Restauração iniciada.",
+    )
+
+    try:
+        backup = _get_latest_backup_for_month(
+            client=client,
+            settings=settings,
+            mes_referencia=mes_referencia,
+        )
+
+        if not backup:
+            raise ValueError(
+                f"Não existe backup disponível para o mês {mes_referencia}."
+            )
+
+        backup_id_a_restaurar = backup["backup_id"]
+        backup_qtd_linhas = backup["qtd_linhas"]
+
+        logger.info(
+            "Backup selecionado para restauração: %s | linhas: %s",
+            backup_id_a_restaurar,
+            backup_qtd_linhas,
+        )
+
+        backup_id_carga_atual = str(uuid.uuid4())
+
+        query = f"""
+            INSERT INTO `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot_backup`
+            SELECT
+              a.*,
+              @backup_id_carga_atual AS backup_id,
+              CURRENT_DATETIME("America/Sao_Paulo") AS backup_ts,
+              'backup_antes_de_restauracao' AS backup_motivo,
+              @execution_id AS substituido_por_execution_id,
+              @usuario_solicitante AS usuario_solicitante
+            FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot` a
+            WHERE FORMAT_DATE('%Y-%m', a.snapshot_date) = @mes_referencia;
+
+            DELETE FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot`
+            WHERE FORMAT_DATE('%Y-%m', snapshot_date) = @mes_referencia;
+
+            INSERT INTO `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot`
+            SELECT
+              * EXCEPT(
+                backup_id,
+                backup_ts,
+                backup_motivo,
+                substituido_por_execution_id,
+                usuario_solicitante
+              )
+            FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot_backup`
+            WHERE backup_id = @backup_id_a_restaurar;
+        """
+
+        job = client.query(
+            query,
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter(
+                        "backup_id_carga_atual",
+                        "STRING",
+                        backup_id_carga_atual,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "backup_id_a_restaurar",
+                        "STRING",
+                        backup_id_a_restaurar,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "execution_id",
+                        "STRING",
+                        execution_id,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "usuario_solicitante",
+                        "STRING",
+                        usuario_solicitante,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "mes_referencia",
+                        "STRING",
+                        mes_referencia,
+                    ),
+                ]
+            ),
+        )
+
+        job.result()
+
+        rows_restored = _count_rows_for_month(
+            client=client,
+            settings=settings,
+            mes_referencia=mes_referencia,
+        )
+
+        logger.info("Restauração concluída. Linhas restauradas: %s", rows_restored)
+
+        _insert_log(
+            client=client,
+            settings=settings,
+            controle_id=str(uuid.uuid4()),
+            execution_id=execution_id,
+            acao="restaurar",
+            modo_execucao=modo_execucao,
+            mes_referencia=mes_referencia,
+            snapshot_date=snapshot_date,
+            status="sucesso",
+            qtd_linhas=rows_restored,
+            backup_id=backup_id_carga_atual,
+            backup_qtd_linhas=backup_qtd_linhas,
+            restaurou_backup_id=backup_id_a_restaurar,
+            usuario_solicitante=usuario_solicitante,
+            started_at=started_at,
+            finished_at=datetime.now(),
+            github_run_id=github_run_id,
+            mensagem="Backup restaurado com sucesso.",
+        )
+
+        return rows_restored
+
+    except Exception as exc:
+        logger.exception("Erro na restauração da API.")
+
+        _insert_log(
+            client=client,
+            settings=settings,
+            controle_id=str(uuid.uuid4()),
+            execution_id=execution_id,
+            acao="restaurar",
+            modo_execucao=modo_execucao,
+            mes_referencia=mes_referencia,
+            snapshot_date=snapshot_date,
+            status="erro",
+            usuario_solicitante=usuario_solicitante,
+            started_at=started_at,
+            finished_at=datetime.now(),
+            github_run_id=github_run_id,
+            erro=str(exc),
+        )
+
+        raise
 
 def run_api_pipeline(
     client: bigquery.Client,

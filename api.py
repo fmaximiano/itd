@@ -7,7 +7,6 @@ import uuid
 
 from config.settings import get_settings
 from scripts.common.bq import get_bq_client
-
 from pipelines.run_api_pipeline import run_api_pipeline
 from scripts.common.logging_utils import get_logger
 
@@ -83,9 +82,19 @@ def main() -> None:
         return
 
     if acao == "restaurar":
-        raise NotImplementedError(
-            "A ação 'restaurar' ainda será implementada no próximo passo."
+        rows_restored = restore_api_snapshot(
+            client=client,
+            settings=settings,
+            execution_id=execution_id,
+            mes_referencia=mes_referencia,
+            modo_execucao=modo_execucao,
+            usuario_solicitante=usuario_solicitante,
+            github_run_id=github_run_id,
         )
+
+        logger.info("Restauração concluída. Linhas restauradas: %s", rows_restored)
+        print(f"OK - Linhas restauradas: {rows_restored}")
+        return
 
     raise ValueError(
         f"ACAO inválida: {acao}. Use 'reprocessar' ou 'restaurar'."
