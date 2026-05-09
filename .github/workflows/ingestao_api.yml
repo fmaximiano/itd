@@ -52,10 +52,6 @@ jobs:
       BQ_TABLE: raw_api_snapshot
       API_KEY: ${{ secrets.API_KEY }}
 
-      API_URL: https://www.mg.gov.br/api/v4/servicos_etapas
-      REQUEST_TIMEOUT: "60"
-      EXCEL_PATH: data/excel
-
       ACAO: ${{ github.event_name == 'schedule' && 'reprocessar' || inputs.acao }}
       MES_REFERENCIA: ${{ inputs.mes_referencia }}
       MODO_EXECUCAO: ${{ github.event_name == 'schedule' && 'github_schedule' || inputs.modo_execucao }}

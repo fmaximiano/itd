@@ -4,9 +4,10 @@ import os
 import re
 import uuid
 
-from google.cloud import bigquery
 
-from config.settings import Settings
+from config.settings import get_settings
+from scripts.common.bq import get_bq_client
+
 from pipelines.run_api_pipeline import run_api_pipeline
 from scripts.common.logging_utils import get_logger
 
@@ -44,11 +45,8 @@ def _validar_mes_referencia(mes_referencia: str | None) -> str | None:
 
 
 def main() -> None:
-    settings = Settings()
-
-    client = bigquery.Client(
-        project=settings.gcp_project_id,
-    )
+    settings = get_settings()
+    client = get_bq_client(settings.gcp_project_id)
 
     execution_id = _get_env("EXECUTION_ID") or str(uuid.uuid4())
 
