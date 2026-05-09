@@ -8,6 +8,7 @@ import uuid
 from config.settings import get_settings
 from scripts.common.bq import get_bq_client
 from pipelines.run_api_pipeline import run_api_pipeline
+from pipelines.run_api_pipeline import restore_api_snapshot
 from scripts.common.logging_utils import get_logger
 
 
