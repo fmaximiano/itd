@@ -87,5 +87,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Conferir inputs recebidos
+        run: |
+          echo "ACAO=$ACAO"
+          echo "MES_REFERENCIA=$MES_REFERENCIA"
+          echo "MODO_EXECUCAO=$MODO_EXECUCAO"
+          echo "USUARIO_SOLICITANTE=$USUARIO_SOLICITANTE"
+          echo "EXECUTION_ID=$EXECUTION_ID"
+
       - name: Rodar pipeline da API
         run: python api.py

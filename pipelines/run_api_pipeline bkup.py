@@ -26,29 +26,8 @@ def _mes_anterior_yyyy_mm(hoje: Optional[date] = None) -> str:
     return f"{hoje.year}-{hoje.month - 1:02d}"
 
 
-def _normalizar_mes_referencia(mes_referencia: str) -> str:
-    """Normaliza a competência para o formato YYYY-MM.
-
-    Aceita tanto YYYY-MM quanto YYYY-MM-DD, porque o Power BI/Power Automate
-    pode enviar a competência como data completa.
-    """
-    valor = str(mes_referencia).strip()
-
-    if re.fullmatch(r"\d{4}-\d{2}", valor):
-        return valor
-
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", valor):
-        return valor[:7]
-
-    raise ValueError(
-        f"mes_referencia inválido: {mes_referencia!r}. "
-        "Use YYYY-MM ou YYYY-MM-DD."
-    )
-
-
 def _snapshot_date_from_mes_referencia(mes_referencia: str) -> date:
-    mes_normalizado = _normalizar_mes_referencia(mes_referencia)
-    ano, mes = mes_normalizado.split("-")
+    ano, mes = mes_referencia.split("-")
     return date(int(ano), int(mes), 1)
 
 
@@ -108,87 +87,6 @@ def _insert_log(
 
     if errors:
         logger.warning("Erro ao gravar log em controle_execucao_api: %s", errors)
-
-
-def _upsert_controle_execucao_mensal_api(
-    client: bigquery.Client,
-    settings: Settings,
-    *,
-    mes_referencia: str,
-    execution_id_oficial: str,
-    status: str = "oficial",
-) -> None:
-    """Marca a execução informada como oficial para a competência.
-
-    A raw_api_snapshot guarda as linhas da execução. A tabela
-    controle_execucao_mensal_api é quem define qual execution_id deve
-    aparecer no Power BI para cada competência.
-    """
-    competencia_ref = _snapshot_date_from_mes_referencia(mes_referencia)
-
-    query = f"""
-        MERGE `{settings.gcp_project_id}.{settings.bq_dataset}.controle_execucao_mensal_api` AS destino
-        USING (
-          SELECT
-            @competencia_ref AS competencia_ref,
-            @execution_id_oficial AS execution_id_oficial,
-            @status AS status,
-            CURRENT_DATETIME("America/Sao_Paulo") AS atualizado_em
-        ) AS origem
-        ON destino.competencia_ref = origem.competencia_ref
-
-        WHEN MATCHED THEN
-          UPDATE SET
-            execution_id_oficial = origem.execution_id_oficial,
-            status = origem.status,
-            atualizado_em = origem.atualizado_em
-
-        WHEN NOT MATCHED THEN
-          INSERT (
-            competencia_ref,
-            execution_id_oficial,
-            status,
-            atualizado_em
-          )
-          VALUES (
-            origem.competencia_ref,
-            origem.execution_id_oficial,
-            origem.status,
-            origem.atualizado_em
-          );
-    """
-
-    job = client.query(
-        query,
-        job_config=bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter(
-                    "competencia_ref",
-                    "DATE",
-                    competencia_ref,
-                ),
-                bigquery.ScalarQueryParameter(
-                    "execution_id_oficial",
-                    "STRING",
-                    execution_id_oficial,
-                ),
-                bigquery.ScalarQueryParameter(
-                    "status",
-                    "STRING",
-                    status,
-                ),
-            ]
-        ),
-    )
-
-    job.result()
-
-    logger.info(
-        "Controle mensal atualizado: competencia_ref=%s | execution_id_oficial=%s | status=%s",
-        competencia_ref.isoformat(),
-        execution_id_oficial,
-        status,
-    )
 
 
 def _count_rows_for_month(
@@ -268,7 +166,6 @@ def _replace_month_with_staging(
         mes_referencia=mes_referencia,
     )
 
-
 def _get_latest_backup_for_month(
     client: bigquery.Client,
     settings: Settings,
@@ -278,9 +175,7 @@ def _get_latest_backup_for_month(
         SELECT
           backup_id,
           MAX(backup_ts) AS backup_ts,
-          COUNT(*) AS qtd_linhas,
-          COUNT(DISTINCT execution_id) AS qtd_execution_ids,
-          ANY_VALUE(execution_id) AS execution_id_restaurado
+          COUNT(*) AS qtd_linhas
         FROM `{settings.gcp_project_id}.{settings.bq_dataset}.raw_api_snapshot_backup`
         WHERE FORMAT_DATE('%Y-%m', snapshot_date) = @mes_referencia
           AND backup_id IS NOT NULL
@@ -313,8 +208,6 @@ def _get_latest_backup_for_month(
         "backup_id": row["backup_id"],
         "backup_ts": row["backup_ts"],
         "qtd_linhas": row["qtd_linhas"],
-        "qtd_execution_ids": row["qtd_execution_ids"],
-        "execution_id_restaurado": row["execution_id_restaurado"],
     }
 
 
@@ -326,13 +219,11 @@ def restore_api_snapshot(
     modo_execucao: str = "manual_github",
     usuario_solicitante: Optional[str] = None,
     github_run_id: Optional[str] = None,
-) -> int:
+    ) -> int:
     started_at = datetime.now()
     controle_id = str(uuid.uuid4())
 
-    mes_referencia = _normalizar_mes_referencia(
-        mes_referencia or _mes_anterior_yyyy_mm()
-    )
+    mes_referencia = mes_referencia or _mes_anterior_yyyy_mm()
     snapshot_date = _snapshot_date_from_mes_referencia(mes_referencia)
 
     logger.info("Iniciando restauração da API.")
@@ -368,13 +259,6 @@ def restore_api_snapshot(
 
         backup_id_a_restaurar = backup["backup_id"]
         backup_qtd_linhas = backup["qtd_linhas"]
-        execution_id_restaurado = backup["execution_id_restaurado"]
-
-        if backup["qtd_execution_ids"] != 1 or not execution_id_restaurado:
-            raise ValueError(
-                "Backup inválido para restauração: era esperado exatamente "
-                "um execution_id no backup selecionado."
-            )
 
         logger.info(
             "Backup selecionado para restauração: %s | linhas: %s",
@@ -440,20 +324,6 @@ def restore_api_snapshot(
 
         logger.info("Restauração concluída. Linhas restauradas: %s", rows_restored)
 
-        if rows_restored <= 0:
-            raise ValueError(
-                "A restauração não gerou linhas ativas. "
-                "O controle mensal não será atualizado."
-            )
-
-        _upsert_controle_execucao_mensal_api(
-            client=client,
-            settings=settings,
-            mes_referencia=mes_referencia,
-            execution_id_oficial=execution_id_restaurado,
-            status="oficial",
-        )
-
         _insert_log(
             client=client,
             settings=settings,
@@ -499,7 +369,6 @@ def restore_api_snapshot(
 
         raise
 
-
 def run_api_pipeline(
     client: bigquery.Client,
     settings: Settings,
@@ -513,9 +382,7 @@ def run_api_pipeline(
     controle_id = str(uuid.uuid4())
     backup_id = str(uuid.uuid4())
 
-    mes_referencia = _normalizar_mes_referencia(
-        mes_referencia or _mes_anterior_yyyy_mm()
-    )
+    mes_referencia = mes_referencia or _mes_anterior_yyyy_mm()
     snapshot_date = _snapshot_date_from_mes_referencia(mes_referencia)
 
     staging_table_name = f"raw_api_snapshot_staging_{_safe_table_suffix(execution_id)}"
@@ -601,20 +468,6 @@ def run_api_pipeline(
         )
 
         logger.info("Carga ativa substituída com sucesso. Linhas ativas: %s", rows_loaded)
-
-        if rows_loaded <= 0:
-            raise ValueError(
-                "A carga ativa ficou sem linhas após o reprocessamento. "
-                "O controle mensal não será atualizado."
-            )
-
-        _upsert_controle_execucao_mensal_api(
-            client=client,
-            settings=settings,
-            mes_referencia=mes_referencia,
-            execution_id_oficial=execution_id,
-            status="oficial",
-        )
 
         _insert_log(
             client=client,

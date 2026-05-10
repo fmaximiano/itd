@@ -28,12 +28,26 @@ def _validar_mes_referencia(mes_referencia: str | None) -> str | None:
     if not mes_referencia:
         return None
 
-    if not re.fullmatch(r"\d{4}-\d{2}", mes_referencia):
+    mes_referencia = mes_referencia.strip().strip('"').strip("'")
+
+    # Aceita YYYY-MM
+    if re.fullmatch(r"\d{4}-\d{2}", mes_referencia):
+        ano, mes = mes_referencia.split("-")
+
+    # Aceita YYYY-MM-01
+    elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", mes_referencia):
+        ano, mes, dia = mes_referencia.split("-")
+
+        if dia != "01":
+            raise ValueError(
+                "MES_REFERENCIA inválido. Quando usar data completa, o dia deve ser 01. Exemplo: 2026-05-01"
+            )
+
+    else:
         raise ValueError(
-            "MES_REFERENCIA inválido. Use o formato YYYY-MM. Exemplo: 2026-04"
+            "MES_REFERENCIA inválido. Use YYYY-MM ou YYYY-MM-01. Exemplos: 2026-05 ou 2026-05-01"
         )
 
-    ano, mes = mes_referencia.split("-")
     mes_int = int(mes)
 
     if mes_int < 1 or mes_int > 12:
