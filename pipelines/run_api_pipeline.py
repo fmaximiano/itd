@@ -498,7 +498,39 @@ def restore_api_snapshot(
         )
 
         raise
+    
+def _remover_linhas_sem_classificacao(df):
+    colunas_classificacao = ["presencial", "digital", "autosservico"]
 
+    for coluna in colunas_classificacao:
+        if coluna not in df.columns:
+            raise ValueError(
+                f"Coluna obrigatória ausente na carga da API: {coluna}"
+            )
+
+    def sem_valor(valor) -> bool:
+        if valor is None:
+            return True
+
+        texto = str(valor).strip()
+
+        return texto == "" or texto == "-"
+
+    sem_classificacao = (
+        df["presencial"].apply(sem_valor)
+        & df["digital"].apply(sem_valor)
+        & df["autosservico"].apply(sem_valor)
+    )
+
+    qtd_removidas = int(sem_classificacao.sum())
+
+    if qtd_removidas > 0:
+        logger.info(
+            "Removendo %s linhas sem classificação: presencial=digital=autosservico ausentes ou '-'.",
+            qtd_removidas,
+        )
+
+    return df.loc[~sem_classificacao].copy(), qtd_removidas
 
 def run_api_pipeline(
     client: bigquery.Client,
@@ -563,10 +595,26 @@ def run_api_pipeline(
             snapshot_date=snapshot_date,
         )
 
+        qtd_linhas_antes_filtro = len(df_api)
+
+        df_api, qtd_linhas_removidas_sem_classificacao = _remover_linhas_sem_classificacao(
+            df_api
+        )
+
         qtd_linhas = len(df_api)
 
+        logger.info(
+            "Linhas após filtro de classificação: %s de %s. Removidas: %s.",
+            qtd_linhas,
+            qtd_linhas_antes_filtro,
+            qtd_linhas_removidas_sem_classificacao,
+        )
+
         if qtd_linhas == 0:
-            raise ValueError("A API retornou 0 linhas após a transformação. A carga ativa não será substituída.")
+            raise ValueError(
+                "A API retornou 0 linhas válidas após remover etapas sem classificação. "
+                "A carga ativa não será substituída."
+            )
 
         logger.info("API transformada em DataFrame com %s linhas.", qtd_linhas)
 
