@@ -12,7 +12,9 @@ from scripts.api.extract_api import fetch_api_json
 from scripts.api.load_api_bq import load_api_to_bq
 from scripts.api.transform_api import transform_api
 from scripts.common.logging_utils import get_logger
+from zoneinfo import ZoneInfo
 
+TZ_BR = ZoneInfo("America/Sao_Paulo")
 
 logger = get_logger(__name__)
 
@@ -492,7 +494,7 @@ def restore_api_snapshot(
             status="erro",
             usuario_solicitante=usuario_solicitante,
             started_at=started_at,
-            finished_at=datetime.now(),
+            finished_at=datetime.now(TZ_BR).replace(tzinfo=None),
             github_run_id=github_run_id,
             erro=str(exc),
         )
@@ -541,7 +543,7 @@ def run_api_pipeline(
     usuario_solicitante: Optional[str] = None,
     github_run_id: Optional[str] = None,
 ) -> int:
-    started_at = datetime.now()
+    started_at = datetime.now(TZ_BR).replace(tzinfo=None)
     controle_id = str(uuid.uuid4())
     backup_id = str(uuid.uuid4())
 
@@ -679,7 +681,7 @@ def run_api_pipeline(
             backup_qtd_linhas=backup_qtd_linhas,
             usuario_solicitante=usuario_solicitante,
             started_at=started_at,
-            finished_at=datetime.now(),
+            finished_at=datetime.now(TZ_BR).replace(tzinfo=None),
             github_run_id=github_run_id,
             mensagem="Carga reprocessada com sucesso.",
         )
@@ -701,7 +703,7 @@ def run_api_pipeline(
             status="erro",
             usuario_solicitante=usuario_solicitante,
             started_at=started_at,
-            finished_at=datetime.now(),
+            finished_at=datetime.now(TZ_BR).replace(tzinfo=None),
             github_run_id=github_run_id,
             erro=str(exc),
         )
