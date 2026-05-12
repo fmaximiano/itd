@@ -31,7 +31,7 @@ on:
   schedule:
     # 07:00 em São Paulo = 10:00 UTC
     # Todo dia 5 de cada mês
-    - cron: "0 10 5 * *"
+    - cron: "0 10 1 * *"
 
 permissions:
   contents: read
