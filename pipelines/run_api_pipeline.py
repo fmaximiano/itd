@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 
 
 def _mes_anterior_yyyy_mm(hoje: Optional[date] = None) -> str:
-    hoje = hoje or date.today()
+    hoje = hoje or datetime.now(TZ_BR).date()
 
     if hoje.month == 1:
         return f"{hoje.year - 1}-12"
@@ -329,7 +329,7 @@ def restore_api_snapshot(
     usuario_solicitante: Optional[str] = None,
     github_run_id: Optional[str] = None,
 ) -> int:
-    started_at = datetime.now()
+    started_at = datetime.now(TZ_BR).replace(tzinfo=None)
     controle_id = str(uuid.uuid4())
 
     mes_referencia = _normalizar_mes_referencia(
@@ -472,7 +472,7 @@ def restore_api_snapshot(
             restaurou_backup_id=backup_id_a_restaurar,
             usuario_solicitante=usuario_solicitante,
             started_at=started_at,
-            finished_at=datetime.now(),
+            finished_at=datetime.now(TZ_BR).replace(tzinfo=None),
             github_run_id=github_run_id,
             mensagem="Backup restaurado com sucesso.",
         )
